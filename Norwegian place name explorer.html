@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Norwegian Place Name Explorer</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root { --ink:#1a1a2e; --paper:#f5f0e8; --gold:#c9a84c; --dim:rgba(255,255,255,0.07); --border:rgba(201,168,76,0.25); }
+body { font-family:'Courier Prime',monospace; background:var(--ink); color:var(--paper); height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+header { background:var(--ink); border-bottom:3px solid var(--gold); padding:11px 20px; display:flex; align-items:center; gap:12px; flex-shrink:0; }
+header h1 { font-family:'Playfair Display',serif; font-size:1.2rem; }
+header h1 em { color:var(--gold); font-style:italic; }
+.header-sub { font-size:0.65rem; opacity:0.4; margin-left:4px; }
+
+.toolbar { background:#111122; border-bottom:2px solid var(--gold); padding:9px 16px; flex-shrink:0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; row-gap:7px; }
+.toolbar-label { font-size:0.6rem; text-transform:uppercase; letter-spacing:0.12em; color:var(--gold); white-space:nowrap; }
+
+.search-group { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.search-group input { background:var(--dim); border:1px solid rgba(201,168,76,0.4); color:var(--paper); padding:6px 11px; font-family:'Courier Prime',monospace; font-size:0.88rem; outline:none; width:180px; }
+.search-group input:focus { border-color:var(--gold); }
+.search-group input::placeholder { opacity:0.35; }
+
+.btn-gold { background:var(--gold); color:var(--ink); border:none; padding:6px 16px; font-family:'Courier Prime',monospace; font-weight:700; font-size:0.82rem; cursor:pointer; text-transform:uppercase; white-space:nowrap; }
+.btn-gold:hover { background:#b8963a; }
+.btn-gold:disabled { opacity:0.35; cursor:not-allowed; }
+
+.btn-outline { background:transparent; border:1px solid rgba(255,255,255,0.2); color:rgba(255,255,255,0.5); padding:6px 14px; font-family:'Courier Prime',monospace; font-size:0.78rem; cursor:pointer; white-space:nowrap; }
+.btn-outline:hover { border-color:rgba(255,255,255,0.4); color:var(--paper); }
+.btn-outline:disabled { opacity:0.25; cursor:not-allowed; }
+
+.mode-toggle { background:transparent; border:1px solid rgba(255,255,255,0.2); color:rgba(255,255,255,0.5); padding:6px 12px; font-family:'Courier Prime',monospace; font-size:0.75rem; cursor:pointer; white-space:nowrap; }
+.mode-toggle .mode-val { color:var(--gold); font-weight:700; }
+
+.quick-pills { display:flex; flex-wrap:wrap; gap:5px; }
+.pill { background:transparent; border:1px solid rgba(201,168,76,0.25); color:rgba(255,255,255,0.5); padding:2px 9px; font-family:'Courier Prime',monospace; font-size:0.72rem; cursor:pointer; transition:all 0.12s; border-radius:2px; }
+.pill:hover { border-color:var(--gold); color:var(--gold); }
+.pill.active { background:var(--gold); color:var(--ink); border-color:var(--gold); font-weight:700; }
+
+/* Nametype filter chips */
+.type-chips { display:flex; flex-wrap:wrap; gap:5px; }
+.type-chip {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.35);
+  padding: 4px 11px;
+  font-family: 'Courier Prime', monospace;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.type-chip.active {
+  color: var(--ink);
+  border-color: transparent;
+  font-weight: 700;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.type-chip:hover { opacity: 0.85; }
+
+.main { flex:1; display:flex; overflow:hidden; min-height:0; }
+#map { flex:1; min-width:0; }
+
+.sidebar { width:270px; min-width:270px; display:flex; flex-direction:column; border-left:2px solid var(--gold); overflow:hidden; }
+.sidebar-head { padding:9px 13px; border-bottom:1px solid var(--border); font-size:0.62rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--gold); flex-shrink:0; }
+.list-filter-wrap { padding:7px 11px; border-bottom:1px solid rgba(255,255,255,0.07); flex-shrink:0; }
+.list-filter-wrap input { width:100%; background:rgba(255,255,255,0.06); border:1px solid var(--border); color:var(--paper); padding:5px 8px; font-family:'Courier Prime',monospace; font-size:0.8rem; outline:none; }
+.list-filter-wrap input:focus { border-color:var(--gold); }
+.place-list { overflow-y:auto; flex:1; min-height:0; }
+.place-list::-webkit-scrollbar { width:3px; }
+.place-list::-webkit-scrollbar-thumb { background:var(--gold); }
+.place-item { padding:8px 13px; border-bottom:1px solid rgba(255,255,255,0.04); cursor:pointer; transition:background 0.1s; }
+.place-item:hover { background:rgba(201,168,76,0.1); }
+.place-item.active { background:rgba(201,168,76,0.18); border-left:3px solid var(--gold); }
+.place-name { font-family:'Playfair Display',serif; font-size:0.86rem; }
+.place-name em { color:var(--gold); font-style:italic; }
+.place-meta { font-size:0.63rem; opacity:0.45; margin-top:2px; }
+.list-empty { padding:18px 13px; opacity:0.3; font-size:0.78rem; font-style:italic; }
+.loading-row { padding:14px 13px; display:flex; align-items:center; gap:10px; font-size:0.78rem; opacity:0.6; }
+.mini-spinner { width:16px; height:16px; flex-shrink:0; border:2px solid rgba(201,168,76,0.2); border-top-color:var(--gold); border-radius:50%; animation:spin 0.7s linear infinite; }
+.progress-bar-wrap { width:100%; height:3px; background:rgba(255,255,255,0.08); margin-top:6px; }
+.progress-bar { height:3px; background:var(--gold); transition:width 0.3s; width:0%; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.status-bar { padding:5px 13px; font-size:0.62rem; opacity:0.38; border-top:1px solid rgba(255,255,255,0.07); flex-shrink:0; }
+
+.map-badge { position:absolute; top:10px; right:10px; background:var(--ink); color:var(--paper); padding:7px 13px; font-size:0.72rem; border:1px solid var(--gold); z-index:1000; pointer-events:none; font-family:'Courier Prime',monospace; }
+
+.leaflet-popup-content-wrapper { background:var(--ink); color:var(--paper); border-radius:0; font-family:'Courier Prime',monospace; border:1px solid var(--gold); }
+.leaflet-popup-tip { background:var(--ink); }
+.popup-name { font-family:'Playfair Display',serif; font-size:0.95rem; color:var(--gold); margin-bottom:3px; }
+.popup-detail { font-size:0.7rem; opacity:0.6; line-height:1.7; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Norwegian <em>Place Name</em> Explorer</h1>
+  <span class="header-sub">Kartverket Stedsnavn API · SSR · live data</span>
+</header>
+
+<div class="toolbar">
+  <div class="search-group">
+    <span class="toolbar-label">Suffix:</span>
+    <input type="text" id="suffix-input" placeholder="botn, fjord, vik...">
+    <button class="btn-gold" id="search-btn" onclick="doSearch()">Search</button>
+    <button class="mode-toggle" id="mode-btn" onclick="toggleMode()">Mode: <span class="mode-val" id="mode-val">Ends with</span></button>
+    <button class="btn-outline" id="export-btn" onclick="exportJSON()" disabled>⬇ Export JSON</button>
+  </div>
+
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;width:100%">
+    <span class="toolbar-label">Quick:</span>
+    <div class="quick-pills" id="quick-pills"></div>
+  </div>
+
+  <div style="display:flex;gap:6px;align-items:flex-start;flex-wrap:wrap;width:100%">
+    <span class="toolbar-label" style="margin-top:5px">Type:</span>
+    <div class="type-chips" id="type-chips" style="flex:1"></div>
+  </div>
+</div>
+
+<div class="main">
+  <div id="map">
+    <div class="map-badge" id="map-badge">Enter a suffix to search</div>
+  </div>
+  <div class="sidebar">
+    <div class="sidebar-head" id="sidebar-head">Results</div>
+    <div class="list-filter-wrap">
+      <input type="text" id="list-filter" placeholder="Filter list...">
+    </div>
+    <div class="place-list" id="place-list">
+      <div class="list-empty">← Search for a place name suffix</div>
+    </div>
+    <div class="status-bar" id="status-bar"></div>
+  </div>
+</div>
+
+<script>
+const API_BASE = 'https://ws.geonorge.no/stedsnavn/v1/navn';
+
+const QUICK = ['botn','fjord','vik','nes','dal','berg','ås','sund','øy','heim','stad','land','elv','vær'];
+
+// Priority types shown first
+const TYPE_PRIORITY = ['By','Tettsted','Bydel','Grend','Gard','Adressenavn'];
+
+// Nametype colors
+const TYPE_COLORS = {
+  'Fjord': '#2d6a9f', 'Vik': '#4a90c4', 'Innsjø': '#1a6b8a',
+  'Elv': '#2d8a4e', 'Bekk': '#6b8c42',
+  'Fjell': '#8b4513', 'Dal': '#a0522d', 'Ås': '#c9a84c',
+  'By': '#e85d04', 'Tettsted': '#e85d04', 'Gård': '#9b5de5',
+  'Nes': '#888888', 'Halvøy': '#666666', 'Øy': '#2d6a9f',
+};
+
+function typeColor(type) {
+  return TYPE_COLORS[type] || '#c9a84c';
+}
+
+let allResults = [];
+let allTypes = new Set();
+let activeTypes = new Set();
+let currentSuffix = '';
+let matchMode = 'ends';
+let map = null;
+let layerGroup = null;
+let isSearching = false;
+
+// Quick pills
+const pillsEl = document.getElementById('quick-pills');
+QUICK.forEach(s => {
+  const btn = document.createElement('button');
+  btn.className = 'pill';
+  btn.textContent = '-' + s;
+  btn.dataset.suffix = s;
+  btn.addEventListener('click', () => {
+    document.getElementById('suffix-input').value = s;
+    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    doSearch();
+  });
+  pillsEl.appendChild(btn);
+});
+
+// Map init
+window.addEventListener('DOMContentLoaded', () => {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    map = L.map('map', { center: [65, 15], zoom: 5 });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '© OpenStreetMap © CARTO', maxZoom: 18
+    }).addTo(map);
+    layerGroup = L.layerGroup().addTo(map);
+    map.invalidateSize();
+  }));
+  document.getElementById('suffix-input').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+  document.getElementById('list-filter').addEventListener('input', renderList);
+});
+
+function toggleMode() {
+  matchMode = matchMode === 'ends' ? 'anywhere' : 'ends';
+  document.getElementById('mode-val').textContent = matchMode === 'ends' ? 'Ends with' : 'Anywhere';
+  if (currentSuffix) doSearch();
+}
+
+async function doSearch() {
+  if (isSearching) return;
+  const val = document.getElementById('suffix-input').value.trim().toLowerCase();
+  if (!val) return;
+  isSearching = true;
+  currentSuffix = val;
+
+  document.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p.dataset.suffix === val));
+  document.getElementById('place-list').innerHTML = '<div class="loading-row"><div class="mini-spinner"></div>Fetching from SSR...</div>';
+  document.getElementById('sidebar-head').textContent = 'Loading...';
+  document.getElementById('search-btn').disabled = true;
+
+  try {
+    // API only allows one wildcard - use prefix wildcard for 'ends with', no wildcard for 'anywhere'
+    const pattern = matchMode === 'ends' ? '*' + val : val;
+    const encoded = encodeURIComponent(pattern).replace(/%2A/gi, '*');
+
+    allResults = [];
+    allTypes = new Set();
+    let page = 1;
+    let totalFetched = 0;
+
+    while (true) {
+      const url = API_BASE + '?sok=' + encoded + '&treffPerSide=500&side=' + page + '&utkoordsys=4258';
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('API error ' + resp.status + ': ' + await resp.text());
+      const data = await resp.json();
+      const batch = data.navn || [];
+      if (batch.length === 0) break;
+      totalFetched += batch.length;
+      const totalAvailable = data.metadata?.totaltAntallTreff ?? 9999;
+
+      const pct = Math.min(100, Math.round((totalFetched / Math.max(totalAvailable, 1)) * 100));
+      document.getElementById('place-list').innerHTML =
+        '<div class="loading-row"><div class="mini-spinner"></div>Fetched ' + totalFetched + ' of ' + totalAvailable + ' names...</div>' +
+        '<div class="progress-bar-wrap"><div class="progress-bar" style="width:' + pct + '%"></div></div>';
+
+      for (const item of batch) {
+        // Name is directly on the item as skrivemåte
+        const name = item['skrivemåte'] || item['skrivemåte'] || item.skrivemåte;
+        if (!name) continue;
+        // Coordinates in representasjonspunkt as nord/øst
+        const pt = item.representasjonspunkt;
+        const lat = pt?.nord;
+        const lng = pt?.['øst'] || pt?.['øst'];
+        if (!lat || !lng) continue;
+        const type = item.navneobjekttype || '';
+        const kommune = item.kommuner?.[0]?.kommunenavn || '';
+        const fylke = item.fylker?.[0]?.fylkesnavn || '';
+        allTypes.add(type);
+        allResults.push({ name, type, kommune, fylke, lat, lng });
+      }
+
+      page++;
+      if (batch.length < 500) break;
+      if (page > 20) break; // max 10000
+    }
+
+    allResults.sort((a, b) => a.name.localeCompare(b.name, 'no'));
+    const apiTotal = allResults.length >= 10000 ? 10000 : null;
+
+    // Build type filter chips
+    buildTypeChips();
+    renderList();
+    renderMarkers();
+
+    const eb = document.getElementById('export-btn');
+    eb.disabled = false; eb.style.opacity = '1'; eb.style.cursor = 'pointer';
+
+  } catch(e) {
+    document.getElementById('place-list').innerHTML = '<div class="list-empty">Error: ' + e.message + '</div>';
+    document.getElementById('sidebar-head').textContent = 'Error';
+  }
+
+  document.getElementById('search-btn').disabled = false;
+  isSearching = false;
+}
+
+function buildTypeChips() {
+  activeTypes = new Set(allTypes);
+  const chipsEl = document.getElementById('type-chips');
+  chipsEl.innerHTML = '';
+
+  // Sort: priority types first, then rest alphabetically
+  const sorted = [...allTypes].sort((a, b) => {
+    const pa = TYPE_PRIORITY.indexOf(a);
+    const pb = TYPE_PRIORITY.indexOf(b);
+    if (pa !== -1 && pb !== -1) return pa - pb;
+    if (pa !== -1) return -1;
+    if (pb !== -1) return 1;
+    return a.localeCompare(b, 'no');
+  });
+
+  // Add "All" / "None" toggle buttons
+  const allBtn = document.createElement('button');
+  allBtn.className = 'type-chip active';
+  allBtn.textContent = 'All';
+  allBtn.style.background = 'var(--gold)';
+  allBtn.style.color = 'var(--ink)';
+  allBtn.style.fontWeight = '700';
+  allBtn.addEventListener('click', () => {
+    const anyActive = activeTypes.size > 0;
+    if (anyActive) {
+      activeTypes.clear();
+      chipsEl.querySelectorAll('.type-chip[data-type]').forEach(ch => {
+        ch.classList.remove('active');
+        ch.style.background = 'transparent';
+        ch.style.color = 'rgba(255,255,255,0.4)';
+        ch.style.borderColor = 'rgba(255,255,255,0.15)';
+      });
+      allBtn.textContent = 'None';
+    } else {
+      sorted.forEach(t => activeTypes.add(t));
+      chipsEl.querySelectorAll('.type-chip[data-type]').forEach(ch => {
+        const t = ch.dataset.type;
+        const col = typeColor(t);
+        ch.classList.add('active');
+        ch.style.background = col;
+        ch.style.color = '#1a1a2e';
+        ch.style.borderColor = 'transparent';
+      });
+      allBtn.textContent = 'All';
+    }
+    renderList();
+    renderMarkers();
+  });
+  chipsEl.appendChild(allBtn);
+
+  // Separator
+  const sep = document.createElement('span');
+  sep.style.cssText = 'width:1px;background:rgba(255,255,255,0.15);align-self:stretch;margin:0 2px;';
+  chipsEl.appendChild(sep);
+
+  sorted.forEach(type => {
+    const color = typeColor(type);
+    const chip = document.createElement('button');
+    chip.className = 'type-chip active';
+    chip.textContent = type || '?';
+    chip.style.background = color;
+    chip.style.color = '#1a1a2e';
+    chip.dataset.type = type;
+    chip.addEventListener('click', () => {
+      if (activeTypes.has(type)) {
+        activeTypes.delete(type);
+        chip.classList.remove('active');
+        chip.style.background = 'transparent';
+        chip.style.color = 'rgba(255,255,255,0.4)';
+        chip.style.borderColor = 'rgba(255,255,255,0.15)';
+      } else {
+        activeTypes.add(type);
+        chip.classList.add('active');
+        chip.style.background = color;
+        chip.style.color = '#1a1a2e';
+        chip.style.borderColor = 'transparent';
+      }
+      // Update all/none button label
+      allBtn.textContent = activeTypes.size === 0 ? 'None' : activeTypes.size === allTypes.size ? 'All' : 'Mix';
+      renderList();
+      renderMarkers();
+    });
+    chipsEl.appendChild(chip);
+  });
+}
+
+function getVisible() {
+  return allResults.filter(r => activeTypes.has(r.type));
+}
+
+function highlightSuffix(name) {
+  const nl = name.toLowerCase();
+  const idx = nl.lastIndexOf(currentSuffix);
+  if (idx < 0) return name;
+  return name.slice(0, idx) + '<em>' + name.slice(idx, idx + currentSuffix.length) + '</em>' + name.slice(idx + currentSuffix.length);
+}
+
+function renderList() {
+  const q = document.getElementById('list-filter').value.toLowerCase();
+  const visible = getVisible();
+  const filtered = q ? visible.filter(r => r.name.toLowerCase().includes(q) || r.kommune.toLowerCase().includes(q)) : visible;
+
+  document.getElementById('sidebar-head').textContent = '-' + currentSuffix + ' · ' + visible.length + ' places';
+
+  const listEl = document.getElementById('place-list');
+  listEl.innerHTML = '';
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<div class="list-empty">No results</div>';
+    document.getElementById('status-bar').textContent = '';
+    return;
+  }
+
+  filtered.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'place-item';
+    const color = typeColor(r.type);
+    item.innerHTML =
+      '<div class="place-name">' + highlightSuffix(r.name) + '</div>' +
+      '<div class="place-meta" style="color:' + color + '">' +
+      (r.type || '?') + (r.kommune ? ' · ' + r.kommune : '') + (r.fylke ? ' · ' + r.fylke : '') + '</div>';
+    item.addEventListener('click', () => flyTo(r, item));
+    listEl.appendChild(item);
+  });
+
+  document.getElementById('status-bar').textContent = 'Showing ' + filtered.length + ' places';
+}
+
+function renderMarkers() {
+  if (!layerGroup) return;
+  layerGroup.clearLayers();
+  const visible = getVisible();
+
+  visible.forEach(r => {
+    const color = typeColor(r.type);
+    const marker = L.circleMarker([r.lat, r.lng], {
+      radius: 5, fillColor: color, color: '#1a1a2e', weight: 1.2, fillOpacity: 0.85
+    });
+    marker.bindPopup(
+      '<div class="popup-name">' + highlightSuffix(r.name) + '</div>' +
+      '<div class="popup-detail">' +
+      (r.type || '') + (r.kommune ? '<br>' + r.kommune : '') + (r.fylke ? '<br>' + r.fylke : '') +
+      '<br>' + r.lat.toFixed(4) + '°N, ' + r.lng.toFixed(4) + '°E</div>'
+    );
+    marker.on('click', () => {
+      const items = document.querySelectorAll('.place-item');
+      items.forEach(el => {
+        if (el.querySelector('.place-name')?.textContent === r.name) {
+          el.classList.add('active');
+          el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+      });
+    });
+    layerGroup.addLayer(marker);
+  });
+
+  document.getElementById('map-badge').textContent = '-' + currentSuffix + ' · ' + visible.length + ' places';
+
+  if (visible.length > 0) {
+    const lats = visible.map(r => r.lat);
+    const lngs = visible.map(r => r.lng);
+    map.fitBounds(
+      [[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]],
+      { padding: [30, 30], maxZoom: 10 }
+    );
+  }
+}
+
+function flyTo(r, itemEl) {
+  if (!map) return;
+  map.setView([r.lat, r.lng], 12, { animate: true });
+  layerGroup.eachLayer(m => {
+    if (!m.getLatLng) return;
+    const ll = m.getLatLng();
+    if (Math.abs(ll.lat - r.lat) < 0.0001 && Math.abs(ll.lng - r.lng) < 0.0001) {
+      m.openPopup();
+      const orig = m.options.fillColor;
+      m.setStyle({ fillColor: '#fff', radius: 9 });
+      setTimeout(() => m.setStyle({ fillColor: orig, radius: 5 }), 2000);
+    }
+  });
+  document.querySelectorAll('.place-item').forEach(el => el.classList.remove('active'));
+  itemEl.classList.add('active');
+  itemEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function exportJSON() {
+  const visible = getVisible();
+  if (!visible.length) return;
+  const json = { customCoordinates: visible.map(r => ({
+    lat: r.lat, lng: r.lng,
+    extra: { tags: [r.name, r.type, r.kommune].filter(Boolean) }
+  })) };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' }));
+  a.download = 'stedsnavn_' + currentSuffix + '_' + visible.length + '_locs.json';
+  a.click();
+}
+</script>
+</body>
+</html>
