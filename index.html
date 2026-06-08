@@ -41,27 +41,10 @@ header h1 em { color:var(--gold); font-style:italic; }
 .pill:hover { border-color:var(--gold); color:var(--gold); }
 .pill.active { background:var(--gold); color:var(--ink); border-color:var(--gold); font-weight:700; }
 
-/* Nametype filter chips */
 .type-chips { display:flex; flex-wrap:wrap; gap:5px; }
-.type-chip {
-  background: transparent;
-  border: 1px solid rgba(255,255,255,0.15);
-  color: rgba(255,255,255,0.35);
-  padding: 4px 11px;
-  font-family: 'Courier Prime', monospace;
-  font-size: 0.75rem;
-  cursor: pointer;
-  border-radius: 3px;
-  transition: all 0.12s;
-  white-space: nowrap;
-}
-.type-chip.active {
-  color: var(--ink);
-  border-color: transparent;
-  font-weight: 700;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
-}
-.type-chip:hover { opacity: 0.85; }
+.type-chip { background:transparent; border:1px solid rgba(255,255,255,0.15); color:rgba(255,255,255,0.35); padding:4px 11px; font-family:'Courier Prime',monospace; font-size:0.75rem; cursor:pointer; border-radius:3px; transition:all 0.12s; white-space:nowrap; }
+.type-chip.active { color:var(--ink); border-color:transparent; font-weight:700; box-shadow:0 1px 4px rgba(0,0,0,0.3); }
+.type-chip:hover { opacity:0.85; }
 
 .main { flex:1; display:flex; overflow:hidden; min-height:0; }
 #map { flex:1; min-width:0; }
@@ -144,10 +127,8 @@ const API_BASE = 'https://ws.geonorge.no/stedsnavn/v1/navn';
 
 const QUICK = ['botn','fjord','vik','nes','dal','berg','ås','sund','øy','heim','stad','land','elv','vær'];
 
-// Priority types shown first
 const TYPE_PRIORITY = ['By','Tettsted','Bydel','Grend','Gard','Adressenavn'];
 
-// Nametype colors
 const TYPE_COLORS = {
   'Fjord': '#2d6a9f', 'Vik': '#4a90c4', 'Innsjø': '#1a6b8a',
   'Elv': '#2d8a4e', 'Bekk': '#6b8c42',
@@ -164,7 +145,7 @@ let allResults = [];
 let allTypes = new Set();
 let activeTypes = new Set();
 let currentSuffix = '';
-let matchMode = 'ends';
+let matchMode = 'ends'; // 'ends' | 'starts' | 'anywhere'
 let map = null;
 let layerGroup = null;
 let isSearching = false;
@@ -200,9 +181,25 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function toggleMode() {
-  matchMode = matchMode === 'ends' ? 'anywhere' : 'ends';
-  document.getElementById('mode-val').textContent = matchMode === 'ends' ? 'Ends with' : 'Anywhere';
+  if (matchMode === 'ends') matchMode = 'starts';
+  else if (matchMode === 'starts') matchMode = 'anywhere';
+  else matchMode = 'ends';
+
+  const labels = { ends: 'Ends with', starts: 'Starts with', anywhere: 'Anywhere' };
+  document.getElementById('mode-val').textContent = labels[matchMode];
   if (currentSuffix) doSearch();
+}
+
+function getModePrefix(val) {
+  if (matchMode === 'ends')    return '*' + val;
+  if (matchMode === 'starts')  return val + '*';
+  return '*' + val + '*'; // anywhere
+}
+
+function getModeLabel() {
+  if (matchMode === 'ends')   return '-' + currentSuffix;
+  if (matchMode === 'starts') return currentSuffix + '-';
+  return '~' + currentSuffix;
 }
 
 async function doSearch() {
@@ -218,8 +215,7 @@ async function doSearch() {
   document.getElementById('search-btn').disabled = true;
 
   try {
-    // API only allows one wildcard - use prefix wildcard for 'ends with', no wildcard for 'anywhere'
-    const pattern = matchMode === 'ends' ? '*' + val : val;
+    const pattern = getModePrefix(val);
     const encoded = encodeURIComponent(pattern).replace(/%2A/gi, '*');
 
     allResults = [];
@@ -243,13 +239,11 @@ async function doSearch() {
         '<div class="progress-bar-wrap"><div class="progress-bar" style="width:' + pct + '%"></div></div>';
 
       for (const item of batch) {
-        // Name is directly on the item as skrivemåte
-        const name = item['skrivemåte'] || item['skrivemåte'] || item.skrivemåte;
+        const name = item['skrivemåte'];
         if (!name) continue;
-        // Coordinates in representasjonspunkt as nord/øst
         const pt = item.representasjonspunkt;
         const lat = pt?.nord;
-        const lng = pt?.['øst'] || pt?.['øst'];
+        const lng = pt?.['øst'];
         if (!lat || !lng) continue;
         const type = item.navneobjekttype || '';
         const kommune = item.kommuner?.[0]?.kommunenavn || '';
@@ -260,13 +254,10 @@ async function doSearch() {
 
       page++;
       if (batch.length < 500) break;
-      if (page > 20) break; // max 10000
+      if (page > 20) break;
     }
 
     allResults.sort((a, b) => a.name.localeCompare(b.name, 'no'));
-    const apiTotal = allResults.length >= 10000 ? 10000 : null;
-
-    // Build type filter chips
     buildTypeChips();
     renderList();
     renderMarkers();
@@ -288,7 +279,6 @@ function buildTypeChips() {
   const chipsEl = document.getElementById('type-chips');
   chipsEl.innerHTML = '';
 
-  // Sort: priority types first, then rest alphabetically
   const sorted = [...allTypes].sort((a, b) => {
     const pa = TYPE_PRIORITY.indexOf(a);
     const pb = TYPE_PRIORITY.indexOf(b);
@@ -298,7 +288,6 @@ function buildTypeChips() {
     return a.localeCompare(b, 'no');
   });
 
-  // Add "All" / "None" toggle buttons
   const allBtn = document.createElement('button');
   allBtn.className = 'type-chip active';
   allBtn.textContent = 'All';
@@ -328,12 +317,10 @@ function buildTypeChips() {
       });
       allBtn.textContent = 'All';
     }
-    renderList();
-    renderMarkers();
+    renderList(); renderMarkers();
   });
   chipsEl.appendChild(allBtn);
 
-  // Separator
   const sep = document.createElement('span');
   sep.style.cssText = 'width:1px;background:rgba(255,255,255,0.15);align-self:stretch;margin:0 2px;';
   chipsEl.appendChild(sep);
@@ -360,10 +347,8 @@ function buildTypeChips() {
         chip.style.color = '#1a1a2e';
         chip.style.borderColor = 'transparent';
       }
-      // Update all/none button label
       allBtn.textContent = activeTypes.size === 0 ? 'None' : activeTypes.size === allTypes.size ? 'All' : 'Mix';
-      renderList();
-      renderMarkers();
+      renderList(); renderMarkers();
     });
     chipsEl.appendChild(chip);
   });
@@ -373,9 +358,13 @@ function getVisible() {
   return allResults.filter(r => activeTypes.has(r.type));
 }
 
-function highlightSuffix(name) {
+function highlightName(name) {
   const nl = name.toLowerCase();
-  const idx = nl.lastIndexOf(currentSuffix);
+  const idx = matchMode === 'ends'
+    ? nl.lastIndexOf(currentSuffix)
+    : matchMode === 'starts'
+      ? (nl.startsWith(currentSuffix) ? 0 : -1)
+      : nl.indexOf(currentSuffix);
   if (idx < 0) return name;
   return name.slice(0, idx) + '<em>' + name.slice(idx, idx + currentSuffix.length) + '</em>' + name.slice(idx + currentSuffix.length);
 }
@@ -385,7 +374,8 @@ function renderList() {
   const visible = getVisible();
   const filtered = q ? visible.filter(r => r.name.toLowerCase().includes(q) || r.kommune.toLowerCase().includes(q)) : visible;
 
-  document.getElementById('sidebar-head').textContent = '-' + currentSuffix + ' · ' + visible.length + ' places';
+  const label = getModeLabel();
+  document.getElementById('sidebar-head').textContent = label + ' · ' + visible.length + ' places';
 
   const listEl = document.getElementById('place-list');
   listEl.innerHTML = '';
@@ -401,7 +391,7 @@ function renderList() {
     item.className = 'place-item';
     const color = typeColor(r.type);
     item.innerHTML =
-      '<div class="place-name">' + highlightSuffix(r.name) + '</div>' +
+      '<div class="place-name">' + highlightName(r.name) + '</div>' +
       '<div class="place-meta" style="color:' + color + '">' +
       (r.type || '?') + (r.kommune ? ' · ' + r.kommune : '') + (r.fylke ? ' · ' + r.fylke : '') + '</div>';
     item.addEventListener('click', () => flyTo(r, item));
@@ -422,14 +412,13 @@ function renderMarkers() {
       radius: 5, fillColor: color, color: '#1a1a2e', weight: 1.2, fillOpacity: 0.85
     });
     marker.bindPopup(
-      '<div class="popup-name">' + highlightSuffix(r.name) + '</div>' +
+      '<div class="popup-name">' + highlightName(r.name) + '</div>' +
       '<div class="popup-detail">' +
       (r.type || '') + (r.kommune ? '<br>' + r.kommune : '') + (r.fylke ? '<br>' + r.fylke : '') +
       '<br>' + r.lat.toFixed(4) + '°N, ' + r.lng.toFixed(4) + '°E</div>'
     );
     marker.on('click', () => {
-      const items = document.querySelectorAll('.place-item');
-      items.forEach(el => {
+      document.querySelectorAll('.place-item').forEach(el => {
         if (el.querySelector('.place-name')?.textContent === r.name) {
           el.classList.add('active');
           el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -439,7 +428,7 @@ function renderMarkers() {
     layerGroup.addLayer(marker);
   });
 
-  document.getElementById('map-badge').textContent = '-' + currentSuffix + ' · ' + visible.length + ' places';
+  document.getElementById('map-badge').textContent = getModeLabel() + ' · ' + visible.length + ' places';
 
   if (visible.length > 0) {
     const lats = visible.map(r => r.lat);
